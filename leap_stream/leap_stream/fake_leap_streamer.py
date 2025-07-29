@@ -8,65 +8,64 @@ from std_msgs.msg import String
 
 class FakeLeapStreamer(Node):
     def __init__(self):
-        super().__init__('leap_streamer')
+        super().__init__('fake_leap_streamer')
 
         self.declare_parameter("camera_name", "desk")
         self.camera_name = self.get_parameter('camera_name').value
 
-        self.leap_pub = self.create_publisher(String, '/leap/streamer/' + self.camera_name, 1)
-        self.forecast_pub = self.create_publisher(String, '/applications/hand_forecasting/nn', 1)
+        self.declare_parameter("forecasting_method", "kalman")
+        self.forecasting_method = self.get_parameter('forecasting_method').value
+
+        self.leap_pub = self.create_publisher(String, '/leap/fusion', 1)
+        self.forecast_pub = self.create_publisher(String, '/applications/hand_forecasting', 1)
         
         self.create_timer(1 / 120, self.timer_callback)
 
-        path = join(get_package_share_directory('leap_stream'), 'data/fake_hand_pos.npy')
-        self.fake_pos = np.load(path)
+        path = join(get_package_share_directory('leap_stream'), 'data/forecast_' + self.forecasting_method + '.npy')
+        self.fake_forecast = np.load(path, allow_pickle=True)
+        
+        path = join(get_package_share_directory('leap_stream'), 'data/leap_' + self.forecasting_method + '.npy')
+        self.fake_pos = np.load(path, allow_pickle=True)
+
+
+        # Find when the forecast starts, to sync the signals
+        for f in self.fake_forecast:
+            json_data = json.loads(f.data)
+            ts = json_data.get('timestamp')
+            if ts is not None:
+                break
+        
+        prev_diff = None 
+        self.forecast_start = np.inf
+        for i, f in enumerate(self.fake_pos):
+            diff = ts - json.loads(f.data).get('sync_timestamp')
+            if prev_diff is not None and np.sign(diff) != np.sign(prev_diff):
+                self.forecast_start = i
+            prev_diff = diff
 
         self.counter = 0
+        self.forecast_counter = 0
 
     def timer_callback(self):
-        hand_pos = self.fake_pos[self.counter, :].tolist()
         self.counter += 1
-        if self.counter >= self.fake_pos.shape[0] - 120:
+        if self.counter >= len(self.fake_pos):
             self.counter = 0
-        # TODO: instead of generating fake joint data, record actual jsons and just relay them here
-        frame_data = {
-            'frame_id': 0,
-            'tracking_frame_id': 0,
-            'timestamp': 0,
-            'hands': [
-                {
-                    'hand_type': "right",
-                    'hand_id': 0,
-                    'confidence': 1.0,
-                    'hand_keypoints': {
-                        'palm_position': hand_pos,
-                        'palm_orientation': [],
-                        'arm': {
-                            'prev_joint': [],
-                            'next_joint': [],
-                            'rotation': []
-                        },
-                        'fingers': {},
-                        'grab_angle': 0.0 # in radians
-                }
-            }]
-        }
-        # Convert to JSON
-        json_output = json.dumps(frame_data)
+            
+        frame_data =  self.fake_pos[self.counter]
         
         # Publish JSON
         msg = String()
-        msg.data = json_output
+        msg.data = frame_data.data
         self.leap_pub.publish(msg)
-
-        forecast = self.fake_pos[self.counter:self.counter + 120].tolist()
-        json_output = json.dumps({
-            'future_position' : forecast[-1],
-            'future_trajectory' : forecast
-            })
-        msg = String()
-        msg.data = json_output
-        self.forecast_pub.publish(msg)   
+        
+        if self.counter % 4 == 0: 
+            self.forecast_counter += 1
+            if self.forecast_counter >= len(self.fake_forecast):
+                self.forecast_counter = 0
+            forecast = self.fake_forecast[self.forecast_counter]
+            msg = String()
+            msg.data = forecast.data
+            self.forecast_pub.publish(msg)   
         
 def main():
     rclpy.init()

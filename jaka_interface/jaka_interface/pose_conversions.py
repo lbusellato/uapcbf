@@ -24,7 +24,7 @@ def jaka_to_se3(jaka_pose: list)->SE3:
     SE3
         The converted pose.
     """
-    return SE3(*jaka_pose[:3]) * SE3.RPY(*jaka_pose[3:])
+    return SE3(*(np.array(jaka_pose[:3])/1000)) * SE3.RPY(jaka_pose[3:])
 
 def se3_to_jaka(se3_pose: SE3)->list:
     """Convert a pose from SE3 format to jaka format.
@@ -239,11 +239,12 @@ def ros_to_list(ros_pose: Pose)->list:
             ros_pose.orientation.z,
             ros_pose.orientation.w]
 
+# t: np.ndarray= np.array([0.50, -0.375, 0.01]) for table center
 def leap_to_jaka(leap_pose: list,
                  R: np.ndarray= np.array([[0,-1,0], 
                                           [0,0,1], 
                                           [-1,0,0]]),
-                 t: np.ndarray= np.array([0.50, -0.375, 0.01]))->np.ndarray:
+                 t: np.ndarray= np.array([0.50, 0, 0.01]))->np.ndarray:
     """Converts a pose in LEAP format to JAKA format. Set the proper rotation matrix and translation vector to properly 
     align LEAP's frame to the robot's.
 

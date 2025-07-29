@@ -17,12 +17,16 @@ class LeapStreamer(Node):
         self.declare_parameters(
             namespace='',
             parameters=[
-                ("camera_name", "tracking_mode"),
+                ("camera_name", "desk"),
+                ("tracking_mode", "Desktop"),
             ]
         )
 
         self.camera_name = self.get_parameter('camera_name').value
         self.tracking_mode = self.get_parameter('tracking_mode').value
+
+        if self.tracking_mode not in ['Desktop', 'Screen', 'HMD']:
+            raise ValueError(f"Unrecognized tracking mode {self.tracking_mode}. Allowed values: ['Desktop', 'Screen', 'HMD'].")
 
         self.publisher_ = self.create_publisher(String, '/leap/streamer/' + self.camera_name, 1)
         
@@ -36,8 +40,12 @@ class LeapStreamer(Node):
             else:
                 tracking_mode = leap.TrackingMode.ScreenTop
             self.connection.set_tracking_mode(tracking_mode)
-            while True:
-                time.sleep(1)
+            
+            try:
+                while rclpy.ok():
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
 
 def convert_vector_to_list(vector, scale_factor=1000.0):
     """
@@ -136,7 +144,7 @@ class MyListener(leap.Listener):
         self.frame_counter = 0
 
     def on_connection_event(self, event):
-        print("Connected")
+        self.logger.debug('Connected')
 
     def on_tracking_event(self, event):
         self.logger.debug("Tracking event: " +  str(event.timestamp) + " hands: " + str(len(event.hands)))
@@ -147,8 +155,15 @@ class MyListener(leap.Listener):
 def main():
     rclpy.init()
     node = LeapStreamer()
-    rclpy.spin(node)
-    rclpy.shutdown()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()  # Clean up resources
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

@@ -4,7 +4,7 @@
   <name>jaka_interface</name>
   <version>0.0.0</version>
   <description>This package contains the implementation of the interface with the JAKA ZU 5 robot.</description>
-  <maintainer email="lorenzo.busellato@gmail.com">Lorenzo Busellato</maintainer>
+  <maintainer email="jaka@todo.com">jaka</maintainer>
   <license>BSD</license>
 
   <test_depend>ament_copyright</test_depend>

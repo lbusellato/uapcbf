@@ -31,7 +31,7 @@ def generate_launch_description():
         'visualize_leap', default_value='True', description='Visualize data from a connected Leap camera')
     visualize_leap = LaunchConfiguration("visualize_leap")
     fake_data_arg = DeclareLaunchArgument(
-        'fake_data', default_value='True', description='Use prerecorded data instead of connecting to a Leap camera')
+        'fake_data', default_value='False', description='Use prerecorded data instead of connecting to a Leap camera')
     leap_visualizer_node = Node(
         package='leap_stream',
         executable='leap_visualizer',
@@ -77,19 +77,6 @@ def generate_launch_description():
         arguments=['-d', rviz_config_file]
     )
 
-    leap_streamer_launch = os.path.join(
-        get_package_share_directory('leap_stream'),
-        'launch',
-        'leap_streamer.launch.py'
-    )
-
-    leap_fusion = Node(
-        package='leap_stream',
-        executable='leap_fusion',
-        name='leap_fusion',
-        output='screen'
-    )
-
     return LaunchDescription([
         use_joint_gui_arg,
         visualize_leap_arg,
@@ -98,8 +85,4 @@ def generate_launch_description():
         joint_state_publisher_gui_node,
         leap_visualizer_node,
         rviz2_node,
-        leap_fusion,
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(leap_streamer_launch)
-        )
     ])

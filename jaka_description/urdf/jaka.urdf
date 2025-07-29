@@ -321,7 +321,7 @@
   
   <!-- JOINT -->
   <joint name="fixed" type="fixed">
-    <origin xyz="0 0 0" rpy="0 0 0.785" />
+    <origin xyz="0 0 0" rpy="0 0 0.7854" />
      <parent link="world"/>
      <child link="Link_0"/>
   </joint>

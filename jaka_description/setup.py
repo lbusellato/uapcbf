@@ -19,15 +19,14 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Lorenzo Busellato',
-    maintainer_email='lorenzo.busellato@gmail.com',
+    maintainer='jaka',
+    maintainer_email='jaka@todo.com',
     description='This package the description and moveit configuration of the JAKA ZU 5 robot',
     license='BSD',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'leap_visualizer_node = jaka_description.leap_visualizer_node:main',
-            'log_playback_node = jaka_description.log_playback_node:main'
         ],
     },
 )

@@ -89,6 +89,8 @@ class JAKA_ERR_CODES(Enum):
     ERR_USERFRAME_SET_TIMEOUT = -55
     ERR_TOOL_SET_TIMEOUT      = -56
     ERR_IO_SET_TIMEOUT        = -60
+    
+SUCCESSFUL_RET = (JAKA_ERR_CODES.SUCCESS_CODE.value, )
 
 class FunctionCallException(JakaInterfaceException):
     """Raised when there is an abnormal function call or unsupported interface (Error code: 2)."""

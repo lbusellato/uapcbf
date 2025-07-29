@@ -24,11 +24,11 @@ class LeapVisualizer(Node):
         )
         self.subscription_ = self.create_subscription(
             String,     
-            '/applications/hand_forecasting/nn', 
+            '/applications/hand_forecasting', 
             self.forecasting_callback, 
             10
         )
-
+            
         # Publisher for visualizing hand joints as spheres in RViz
         self.marker_publisher = self.create_publisher(MarkerArray, '/leap/visualizer/current', 10)
 
@@ -42,14 +42,21 @@ class LeapVisualizer(Node):
             # TODO make a trail of every future position
             forecasting_data = json.loads(msg.data)
             future_position = forecasting_data.get('future_position', [])
+            future_traj = forecasting_data.get('future_trajectory', [])
             
             if not future_position:
                 self.clear_markers(self.fmarker_publisher)
                 return  
 
             marker_array = MarkerArray()
-
+            
             marker_id = 0
+            if future_traj:
+                for f in future_traj:
+                    self.add_marker(marker_array, marker_id, f  , "forecast", "", scale=0.025, rgb=[1,0,0])
+                    marker_id += 1
+                
+
             self.add_marker(marker_array, marker_id, future_position  , "forecast", "", scale=0.05, rgb=[1,0,0])
 
             self.fmarker_publisher.publish(marker_array)
@@ -64,7 +71,6 @@ class LeapVisualizer(Node):
             marker_id = 0
             self.add_marker(marker_array, marker_id, [0,0,0], "leap", "", 0.05)
             marker_id += 1
-
             leap_data = json.loads(msg.data)  # Parse JSON
             hands = leap_data.get("hands", [])  # Extract hand data
 
@@ -116,8 +122,7 @@ class LeapVisualizer(Node):
             marker.type = Marker.SPHERE
             marker.action = Marker.ADD
 
-            if not self.fake_data:
-                pos = leap_to_jaka(pos) / 1000
+            pos = leap_to_jaka(pos) / 1000
 
             marker.pose.position = Point(x=float(pos[0]), y=float(pos[1]), z=float(pos[2]))
             marker.pose.orientation.w = 1.0
@@ -153,8 +158,15 @@ class LeapVisualizer(Node):
 def main():
     rclpy.init()
     node = LeapVisualizer()
-    rclpy.spin(node)
-    rclpy.shutdown()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()  # Clean up resources
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

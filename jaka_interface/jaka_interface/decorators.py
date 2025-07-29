@@ -10,6 +10,7 @@ from jaka_interface.exceptions import *
 #                                       #
 #########################################
 
+#TODO split this, way too much stuff happens here
 def process_sdk_call(connected: bool=False, 
                     powered_on: bool=False, 
                     enabled: bool=False, 
