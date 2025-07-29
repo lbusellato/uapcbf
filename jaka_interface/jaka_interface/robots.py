@@ -490,6 +490,19 @@ class BaseRobot():
     def _get_robot_status(self) -> tuple:
         raise NotImplementedError(f"{inspect.currentframe().f_code.co_name} is not implemented")
 
+    @process_sdk_call(connected=True)
+    def get_dh_params(self) -> dict:
+        """Get the robot's Denavit-Hartenberg parameters
+
+        Returns
+        -------
+        dict
+            Dictionary of parameters.
+        """
+        return self._get_dh_params()
+    def _get_dh_params(self) -> dict:
+        raise NotImplementedError(f"{inspect.currentframe().f_code.co_name} is not implemented")
+
     @process_sdk_call(connected=True, update_context='', update_attr='joint_position', update_mode=2)
     def get_joint_position(self) -> list:
         """Get the current joint position of the robot.
@@ -2442,6 +2455,16 @@ class RealRobot(BaseRobot):
             The current position of the TCP.
         """
         return self.robot.get_tcp_position()
+    
+    def _get_dh_params(self):
+        """Get the robot's Denavit-Hartenberg params.
+
+        Returns
+        -------
+        dict
+            The dict of params.
+        """
+        return self.robot.get_dh_params()
 
     def _get_joint_position(self)->list:
         """Get the current joint position of the robot.
@@ -2533,7 +2556,7 @@ class RealRobot(BaseRobot):
         """Enable drag mode.
         """
         return self.robot.drag_mode_enable(True)
-    # TODO: align to SDK signature
+    
     def _disable_drag_mode(self)->None:
         """Disable drag mode.
         """
@@ -3247,8 +3270,6 @@ class RealRobot(BaseRobot):
         else:
             if ref_pos is None:
                 ref_pos = self.get_joint_position()
-            # TODO: We use the Levenberg-Marquardt algorithm because it's the fastest without tuning parameters, perhaps 
-            # we could investigate using tuned others (Gauss-Newton, Newton-Raphson) to push performance even further
             ret = self.chain.ik_LM(jaka_to_se3(cartesian_pose), q0=ref_pos)
             return ((JAKA_ERR_CODES.ERR_KINE_INVERSE_ERR.value,) if not ret[1] else (JAKA_ERR_CODES.SUCCESS_CODE.value, ret[0]))
 
@@ -3805,6 +3826,11 @@ class SimulatedRobot(BaseRobot):
         # Simulated cartesian and joint positions
         self.tcp_position = np.array([-0.48195396,  0.11419133,  0.27716227, -np.pi, 0, -20*np.pi/180])
         self.joint_position = np.array([-np.pi/4, np.pi/2, np.pi/2, np.pi/2, -np.pi/2, 0])
+
+        self.dh_params = {'alpha': (-0.0005976007248150393, 1.571012681834878, 0.0026186919768399993, 0.0029585076850969266, 1.570418930079973, -1.572518299931471), 
+                          'a': (0.0, 0.0, 430.33050537109375, 368.6116943359375, 0.0, 0.0), 
+                          'd': (119.59429931640625, 0.0, 0.0, -113.51529693603516, 113.65059661865234, 106.31169891357422), 
+                          'joint_homeoff': (-0.005741609284850061, -0.01212340607442922, -0.006475695062646038, 0.0004614650491747612, -0.006085788520060811, 0.017154317024852567)}
     
     #########################################
     #                                       #
@@ -3920,6 +3946,8 @@ class SimulatedRobot(BaseRobot):
         return (JAKA_ERR_CODES.SUCCESS_CODE.value, ret)
     
     def _get_tcp_position(self)->list: return (JAKA_ERR_CODES.SUCCESS_CODE.value, self.tcp_position)
+
+    def _get_dh_params(self)->dict: return (JAKA_ERR_CODES.SUCCESS_CODE.value, self.dh_params)
 
     def _get_joint_position(self)->list: return (JAKA_ERR_CODES.SUCCESS_CODE.value, self.joint_position)
     
