@@ -1,0 +1,7 @@
+{
+    "python.analysis.extraPaths": [
+        "/home/jaka/ros_ws/devel/lib/python3/dist-packages",
+        "./jaka_interface"
+    ],
+    "cmake.ignoreCMakeListsMissing": true
+}

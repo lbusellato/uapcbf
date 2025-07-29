@@ -1,0 +1,7 @@
+bool is_connected
+bool is_powered_on
+bool is_enabled
+bool is_em_stop_pressed
+bool is_gripper_closed
+bool is_in_servo_mode
+bool is_in_drag_mode
