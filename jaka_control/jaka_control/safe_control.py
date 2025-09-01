@@ -430,9 +430,7 @@ class SafeControl(Node):
         sigma_dir = np.clip(self.gamma * min_vec_unit.T @ obstacle_cov @ min_vec_unit, 0, self.min_safety_distance)
 
         self.slack_penalty[0] = 100 * (1 - sigma_dir / self.min_safety_distance)
-        #sigma_dir = 0
-
-
+        
         # Distance from obstacle to closest surface point on the cylinder
         dist_to_cylinder_surface = min_dist - r_cyl
 
