@@ -47,9 +47,9 @@ def parse_args():
 # Functions to locate and load the model checkpoint
 def get_model_path():
     try:
-        pkg_dir = get_package_share_directory("collaborice_forecasting_node")
+        pkg_dir = get_package_share_directory("leap_forecasting")
     except PackageNotFoundError:
-        pkg_dir = os.path.join(os.getcwd(), "src", "collaborice_forecasting_node")
+        pkg_dir = os.path.join(os.getcwd(), "src", "leap_forecasting")
     ckpt = os.path.join(
         pkg_dir,
         "checkpoints",

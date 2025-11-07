@@ -9,7 +9,7 @@ def generate_launch_description():
     declare_debug_arg = DeclareLaunchArgument("debug", default_value="false", description="Run in debug/mockup mode")
 
     nn_forecasting_node = Node(
-        package="collaborice_forecasting_node",
+        package="leap_forecasting",
         executable="nn_node",  # <-- this must match your entry_point name
         name="nn_node",
         output="screen",

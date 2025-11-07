@@ -22,7 +22,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'safe_control = jaka_control.safe_control:main'
+            'handover = jaka_control.handover:main',
+            'mock_hand = jaka_control.mock_hand:main'
         ],
     },
 )

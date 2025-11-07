@@ -7,7 +7,7 @@ from leapmotion import LeapFrame
 LEAP_TOPIC_NAME = "/sensors/leap/json"
 
 class ReaderNode(Node):
-    def __init__(self, name: str = "collaborice_forecasting_node", target_hz: int = 30, *args, **kwargs):
+    def __init__(self, name: str = "leap_forecasting", target_hz: int = 30, *args, **kwargs):
         super().__init__(name, *args, **kwargs)
 
         wait_time = 1.0 / target_hz

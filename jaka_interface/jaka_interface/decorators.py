@@ -1,5 +1,6 @@
 import functools
 import rclpy.logging
+import time
 
 from jaka_interface.exceptions import *
 
@@ -72,12 +73,21 @@ def process_sdk_call(connected: bool=False,
             
             ret = func(self, *args, **kwargs)
             error_code = ret[0]
-            
+
+            # Handle EM stop presses
+            # TODO fixing this would be nice, as is it's slow as fuck
+            #if int(time.time()) % 5 == 0:
+            #    robot_state = self.robot.get_robot_state()
+            #    if len(robot_state) > 1 and robot_state[1][0]:
+            #        self.em_stop_callback()
+
             # Check if the SDK returned an error
-            if error_code != JAKA_ERR_CODES.SUCCESS_CODE.value: 
+            if error_code != JAKA_ERR_CODES.SUCCESS_CODE.value:
                 error_message = f"[{context}]: {JAKA_ERR_MSGS.get(error_code)}"
                 logger.error(error_message)
                 exc_class: JakaInterfaceException = ERROR_EXCEPTION_MAP.get(error_code)
+                if exc_class(error_message) is None:
+                    raise Exception(f"Unknown JAKA error code: {error_code}")
                 raise exc_class(error_message)
             
             # Check if the user wants to carry out updates to the state variables

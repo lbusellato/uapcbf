@@ -6,7 +6,9 @@ np.random.seed(420)
 import cvxpy as cp
 import json
 import rclpy
-import matplotlib.pyplot as plt
+import time
+import threading
+from pynput import keyboard  
 
 from datetime import datetime
 from geometry_msgs.msg import Point, Quaternion
@@ -21,7 +23,8 @@ from tf_transformations import quaternion_from_euler
 from visualization_msgs.msg import Marker
 
 # TODO: move control stuff into a controller
-# TODO: separate tasks into individual scripts
+
+UAPCBF = False
 
 class SafeControl(Node):
     def __init__(self):
@@ -102,6 +105,7 @@ class SafeControl(Node):
         }
         self.slack_penalty = np.array([100, 100])
         self.gamma = 5
+        self.k_risk_field = 5
 
         if self.get_parameter('simulated_robot').value == True:
             self.home = np.array([-0.400, 0.500, 0.300, -np.pi, 0, 70*np.pi/180])
@@ -118,7 +122,7 @@ class SafeControl(Node):
 
         self.tcp_target = self.trajT
         self.q_target = self.robot.get_joint_position()
-        self.pos_tolerance = 5e-3
+        self.pos_tolerance = 30e-3
         self.rot_tolerance = 1e-2
         self.KP_pos = 1  # position gain
         self.rot_gain = 1  # orientation gain
@@ -141,20 +145,73 @@ class SafeControl(Node):
         self.u_nominals = []
         self.u_actuals = []   
         self.deltas = []   
-        self.applied_std = []  
+        self.applied_std = [] 
+        self.em_stops = []
+        self.qp_fails = [] 
 
         self.control_loop_timer = self.create_timer(1.0/60, self.control_loop) 
         self.homed = False
 
         self.half_runs = 0 # TODO wtf
         self.runs = 0
-        self.max_runs = 3
+        self.max_runs = 10
 
-        self.u_smooth = 0.5
+        self.u_smooth = 0.95
         self.prev_u = np.zeros(6)
+
+        self.stuck_counter = 0
         
         self.collision_detected = False
         self.collision_check_iter = 0
+
+        self.listener_thread = threading.Thread(target=self.keyboard_listener, daemon=True)
+        self.listener_thread.start()
+
+        self.alive = True
+
+    def keyboard_listener(self):
+        """Listen for Ctrl+K to manually save and move to the next run."""
+        def on_press(key):
+            try:
+                # Detect Ctrl+K
+                if key == keyboard.Key.ctrl_l or key == keyboard.Key.ctrl_r:
+                    self.ctrl_pressed = True
+                elif hasattr(key, 'char') and key.char == 'k' and getattr(self, 'ctrl_pressed', False):
+                    self.alive = False
+                    self.loginfo(f"Ctrl+K pressed — saving run {self.runs + 1}")
+                    self.em_stops = [1] * len(self.em_stops)
+                    self.save_data(self.runs + 1)
+                    self.reset_data()
+                    self.runs += 1
+
+                    # Reset control state for next run
+                    self.homed = False
+                    self.converged = False
+                    self.start_time = self.get_clock().now().nanoseconds
+                    self.t = 0
+
+                    self.tcp_target = self.trajT
+                    
+                    # Optional: ensure robot is ready
+                    self.robot.initialize(collision_recover=True)
+                    
+                    if self.runs >= self.max_runs:
+                        self.loginfo("Reached max runs, stopping control loop.")
+                        self.control_loop_timer.cancel()
+                        return False  # stop listener
+
+                    self.loginfo(f"Starting next run #{self.runs + 1}")
+                    
+                    self.alive = True
+            except AttributeError:
+                pass
+
+        def on_release(key):
+            if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+                self.ctrl_pressed = False
+
+        with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+            listener.join()
 
     def joint_state_publisher_callback(self):
         msg = JointState()
@@ -176,6 +233,8 @@ class SafeControl(Node):
         self.u_actuals = []   
         self.deltas = []   
         self.applied_std = []  
+        self.em_stops = []
+        self.qp_fails = []
 
     def save_data(self, append=""):
         timestamp = datetime.now().strftime("%Y-%m-%d %H.%M.%S")
@@ -198,7 +257,7 @@ class SafeControl(Node):
                   'curr_hand_x', 'curr_hand_y', 'curr_hand_z', 
                   'future_hand_x', 'future_hand_y', 'future_hand_z', 
                   'u0_nominal', 'u1_nominal', 'u2_nominal', 'u3_nominal', 'u4_nominal', 'u5_nominal', 
-                  'u0_actual', 'u1_actual', 'u2_actual', 'u3_actual', 'u4_actual', 'u5_actual']
+                  'u0_actual', 'u1_actual', 'u2_actual', 'u3_actual', 'u4_actual', 'u5_actual', 'QP_fail', 'EM_stop']
         if self.h_star:
             with open(csv_filename, mode='w', newline='') as file:
                 writer = csv.writer(file)
@@ -217,6 +276,9 @@ class SafeControl(Node):
                     u0_n, u1_n, u2_n, u3_n, u4_n, u5_n = self.u_nominals[i]
                     u0_a, u1_a, u2_a, u3_a, u4_a, u5_a = self.u_actuals[i]
 
+                    qp_fail = self.qp_fails[i]
+                    em_stop = self.em_stops[i]
+
                     writer.writerow([np.round(self.time[i] * 1e-9, 3), 
                                     self.h_star[i], 
                                     self.h_now[i], 
@@ -226,40 +288,33 @@ class SafeControl(Node):
                                     curr_hand_x, curr_hand_y, curr_hand_z, 
                                     future_hand_x, future_hand_y, future_hand_z, 
                                     u0_n, u1_n, u2_n, u3_n, u4_n, u5_n, 
-                                    u0_a, u1_a, u2_a, u3_a, u4_a, u5_a])
+                                    u0_a, u1_a, u2_a, u3_a, u4_a, u5_a,
+                                    qp_fail, em_stop])
         #plt.plot(self.applied_std)
         #plt.show()
-        self.robot.shutdown()
+        #self.robot.shutdown()
 
     def homing(self):
         self.robot.open_gripper()
         self.robot.disable_servo_mode()
-        #self.robot.linear_move(self.approachS, MoveMode.ABSOLUTE, 250, True)
-        #self.robot.linear_move(self.pickS, MoveMode.ABSOLUTE, 250, True)
-        #self.robot.close_gripper()
-        #self.robot.linear_move(self.approachS, MoveMode.ABSOLUTE, 250, True)
-        #self.robot.linear_move(self.trajS_jaka, MoveMode.ABSOLUTE, 250, True)
         self.robot.joint_move(self.joint_home, MoveMode.ABSOLUTE, speed=0.25, is_blocking=True)
         self.robot.enable_servo_mode()
         self.homed = True
         self.q_target = self.robot.get_joint_position()
         self.start_time = self.get_clock().now().nanoseconds
 
-    def control_loop(self): 
-            
+    def control_loop(self):  
+        if not self.alive: return    
         if self.moving:
             if not self.homed:self.homing()
             
-            self.time.append(self.get_clock().now().nanoseconds - self.start_time)
-
-            if self.handover:
-                pass #self.tcp_target = self.trajT
-            
+            self.time.append(self.get_clock().now().nanoseconds - self.start_time)            
             self.t += self.dt
 
             current_state = self.robot.get_joint_position()
             self.joint_positions.append(current_state)
             self.hand_positions.append(self.current_hand_pos)
+
             if self.hand_forecast:
                 self.future_hand_positions.append(self.hand_forecast[-1])
             else:
@@ -292,30 +347,17 @@ class SafeControl(Node):
                 
                 self.bb_pub.publish(self.bb_marker)
 
-            #self.collision_check_iter += 1
-            #if self.collision_check_iter % 500 == 0:
-            #    try:
-            #        self.collision_detected = self.robot.get_robot_status()[5]
-            #    except Exception:
-            #        pass
-            #    if self.collision_detected:
-            #        self.loginfo(f"Collision detected, aborting run...")
-            #        self.robot.collision_recover()
-            #        self.homing()
-            #        self.converged = True
-            #        self.collision_detected = True
-
             if not self.converged:
-                u = self.calculate_u_uapcbf(self.t, current_state)
+                #u = self.calculate_u_apf(self.t, current_state)
+                #u = self.calculate_u_ttc(self.t, current_state)
+                u = self.calculate_u_risk_field(self.t, current_state)
+                #u = self.calculate_u_uapcbf(self.t, current_state)
                 #u = self.calculate_u_pcbf(self.t, current_state)
                 #u = self.calculate_u_cbf(self.t, current_state)
                 #u = self.calculate_u_nominal(self.t, current_state)
-
+                
                 u = self.u_smooth * u + (1 - self.u_smooth) * self.prev_u
                 self.prev_u = u
-                
-                if np.max(np.abs(u * self.dt)) > self.max_joint_vel:
-                    raise ValueError(f"{u}")
 
                 self.u_actuals.append(u)
                 
@@ -330,32 +372,19 @@ class SafeControl(Node):
                 tcp_pose[2] /= 1000
                 self.tcp_positions.append(tcp_pose)
 
-                self.converged = np.allclose(tcp_pose[:3], self.tcp_target[:3], atol=self.pos_tolerance) or np.max(np.abs(u)) < 1e-1
+                self.converged = np.allclose(tcp_pose[:3], self.tcp_target[:3], atol=self.pos_tolerance)
 
             else:
-                if self.half_runs % 2 == 0:
-                    self.tcp_target = self.trajS
-                else:
-                    self.tcp_target = self.trajT
                 self.converged = False
-                self.half_runs += 1
-                if self.half_runs % 2 == 0:
-                    self.runs += 1
-                    self.loginfo(f"Saving run {self.runs}")
-                    self.save_data(self.runs)
-                    self.reset_data()
-                    self.half_runs = 0
-                    if self.runs == self.max_runs:
-                        self.loginfo("Trial completed")
-                        self.control_loop_timer.cancel()
-                #if not self.handover:
-                #    self.converged = False
-                #    self.tcp_target = self.trajT
-                #    self.handover = True
-                #else:
-                #    self.robot.open_gripper()
-                #    self.save_data()
-                #    self.control_loop_timer.cancel()
+                self.homed = False
+                self.runs += 1
+                self.loginfo(f"Saving run {self.runs}")
+                self.save_data(self.runs)
+                self.reset_data()
+                self.tcp_target = self.trajT
+                if self.runs == self.max_runs:
+                    self.loginfo("Trial completed")
+                    self.control_loop_timer.cancel()
     
     def leap_fusion_callback(self, msg):
         self.record_leap.append(msg)
@@ -369,10 +398,6 @@ class SafeControl(Node):
                         self.current_hand_pos = leap_to_jaka(hand.get('palm_position'))/1000
                     elif h.get('hand_type')=='left':
                         hand = hands[0].get('hand_keypoints')
-                        target_pos = leap_to_jaka(hand.get('palm_position'))/1000
-                        #self.trajT[:3] = target_pos[:3]
-                        #self.trajT[2] += 0.05
-                        #self.pos_tolerance = 7e-3
 
         self.hand_forecast[0] = self.current_hand_pos
 
@@ -397,8 +422,10 @@ class SafeControl(Node):
         
         return obstacle_pos, obstacle_cov    
 
-    def h_func(self, t, state, return_cov=False):
-        
+    def hand_tcp_dist(self, t, state):
+        """Returns the current distance between the bounding surfaces of hand and tcp,
+        as well as the direction of it.
+        """
         r_cyl = 0.045  # cylinder radius [m]
         h_cyl = 0.35   # cylinder height [m]
 
@@ -411,7 +438,7 @@ class SafeControl(Node):
         cyl_top = tcp_pos - h_cyl * tcp_z_axis
 
         # Obstacle position and radius at time t in [tau, tau + T]
-        obstacle_pos, obstacle_cov = self.get_updated_obstacle(t)
+        obstacle_pos, _ = self.get_updated_obstacle(t)
 
         # Project obstacle onto cylinder axis
         axis_vec = cyl_top - tcp_pos
@@ -426,20 +453,34 @@ class SafeControl(Node):
         min_dist = np.linalg.norm(min_vec)
         min_vec_unit = min_vec / min_dist
 
-        # Uncertainty handling: project sigma onto the direction from obstacle to tcp, use that as dynamic, uncertain margin
-        sigma_dir = np.clip(self.gamma * min_vec_unit.T @ obstacle_cov @ min_vec_unit, 0, self.min_safety_distance)
-
-        self.slack_penalty[0] = 100 * (1 - sigma_dir / self.min_safety_distance)
-        
         # Distance from obstacle to closest surface point on the cylinder
         dist_to_cylinder_surface = min_dist - r_cyl
 
+        return dist_to_cylinder_surface, min_vec_unit
+
+    def h_func(self, t, state, return_cov=False, risk_field=False):
+        
+        # Obstacle position and radius at time t in [tau, tau + T]
+        _, obstacle_cov = self.get_updated_obstacle(t)
+
+        # Distance between hand and tcp
+        dist_to_cylinder_surface, min_vec_unit = self.hand_tcp_dist(t, state)
+
+        # Uncertainty handling: project sigma onto the direction from obstacle to tcp, use that as dynamic, uncertain margin
+        if UAPCBF:
+            sigma_dir = np.clip(self.gamma * min_vec_unit.T @ obstacle_cov @ min_vec_unit, 0, self.min_safety_distance)
+        else:
+            sigma_dir = 0
+    
+        self.slack_penalty[0] = 100 * (1 - sigma_dir / self.min_safety_distance)
+
         # Safety margin
         # obstacle_radius is already contained in min_dist!!!!
+        ret = (self.min_safety_distance + sigma_dir) - dist_to_cylinder_surface
         if return_cov:
-            return (self.min_safety_distance + sigma_dir) - dist_to_cylinder_surface, sigma_dir
+            return ret, sigma_dir if UAPCBF else 0
         else:
-            return (self.min_safety_distance + sigma_dir) - dist_to_cylinder_surface
+            return ret
     
     def h_func_with_gradient(self, t, state):
         """Numerically computes the gradient of h with respect to the state q."""
@@ -563,7 +604,7 @@ class SafeControl(Node):
                 # Switch to M1star when the derivative gets too large
                 dR_dx = dM1star_dx
 
-        _, cov = self.h_func(R, state, True)
+        _, cov = self.h_func(R, state, return_cov=True)
         self.applied_std.append(cov)
 
         m, dm = self.m_func(R - t)
@@ -653,10 +694,13 @@ class SafeControl(Node):
             problem.solve(solver=cp.OSQP)
             if u.value is None or np.any(np.isnan(u.value)):
                 self.loginfo("QP failed")
+                self.qp_fails.append(1)
             else:
                 u_safe = u.value
+                self.qp_fails.append(0)
         except Exception as e:
             self.loginfo(f"QP solver error: {e}")
+            self.qp_fails.append(1)
 
         u = u_nom + u_safe
             
@@ -682,15 +726,116 @@ class SafeControl(Node):
             problem.solve(solver=cp.OSQP)
             if u.value is None or np.any(np.isnan(u.value)):
                 self.loginfo("QP failed")
+                self.qp_fails.append(0)
             else:
                 u_safe = u.value
                 self.deltas.append(delta.value)
+                self.qp_fails.append(0)
         except Exception as e:
             self.loginfo(f"QP solver error: {e}")
+            self.qp_fails.append(1)
 
         u = u_nom + u_safe
         
         return u
+
+    def risk_field(self, t, state):
+        if self.current_hand_pos is not None:
+            d, min_vec_unit = self.hand_tcp_dist(t, state)
+            _, obstacle_cov = self.get_updated_obstacle(t)
+            sigma = np.clip(self.gamma * min_vec_unit.T @ obstacle_cov @ min_vec_unit, 0, self.min_safety_distance)
+       
+            d_safe = self.min_safety_distance + self.k_risk_field * sigma
+            return d < d_safe
+        else:
+            return True
+        
+    def ttc(self, t, state):
+        """
+        Compute TTC-based safety scaling factor (β) for velocity control.
+        Uses the relative velocity between the robot TCP and the operator's hand.
+
+        Returns: β ∈ [0,1]
+        """
+
+        # No hand detected — no scaling applied
+        if self.current_hand_pos is None:
+            return 1.0
+
+        # Get TCP and hand positions (m)
+        tcp_pose = self.robot.kine_forward(state)
+        tcp_pos = tcp_pose.t
+        hand_pos = self.current_hand_pos
+
+        # Compute instantaneous TCP velocity (approximate via nominal control)
+        v_tcp = self.mu_func(state)[:3]  # nominal task-space velocity
+        # If you have a better estimate from joint velocities or Jacobian, use that.
+
+        # Estimate hand velocity (finite difference if you have history)
+        if len(self.hand_positions) > 1 and self.hand_positions[-2] is not None:
+            v_hand = (self.hand_positions[-1] - self.hand_positions[-2]) / self.dt
+        else:
+            v_hand = np.zeros(3)
+
+        # Relative vectors
+        rel_pos = hand_pos - tcp_pos
+        rel_vel = v_hand - v_tcp
+        dist = np.linalg.norm(rel_pos)
+
+        # Avoid division by zero
+        if dist < 1e-6:
+            return 0.0
+
+        # Project relative velocity along line of sight
+        v_rel_scalar = np.dot(rel_pos, rel_vel) / dist
+
+        # TTC computation
+        if v_rel_scalar >= 0:
+            ttc = np.inf  # moving apart
+        else:
+            ttc = dist / -v_rel_scalar
+
+        # TTC parameters
+        ttc_min = 0.25   # [s] - minimal safe reaction time
+        ttc_max = 4.0   # [s] - beyond this, full speed allowed
+
+        # Compute β scaling factor
+        beta = max(0.0, min((min(ttc, ttc_max) - ttc_min) / ttc_min, 1.0))
+        
+        return beta
+    
+    def apf(self, t, state):
+        """
+        Artificial Potential Field (repulsive-only) safety velocity modifier.
+        The nominal controller mu_func() still drives toward the goal.
+        """
+        if self.current_hand_pos is None:
+            return 1.0  # no scaling
+
+        # TCP position
+        tcp_pose = self.robot.kine_forward(state)
+        tcp_pos = tcp_pose.t
+
+        # Obstacle (hand) position
+        obs_pos = self.current_hand_pos
+        rel_vec = tcp_pos - obs_pos
+        dist = np.linalg.norm(rel_vec)
+
+        # APF parameters
+        d0 = self.min_safety_distance   # [m] influence radius
+        eta = 0.05  # gain
+
+        # Compute repulsive velocity correction (task-space)
+        v_rep = np.zeros(3)
+        if dist < d0 and dist > 1e-6:
+            v_rep = eta * (1.0 / dist - 1.0 / d0) * (1.0 / dist**2) * (rel_vec / dist)
+
+        # Map to joint space
+        J = self.robot.jacobian(state)
+        J_pinv = np.linalg.pinv(J)
+        u_rep = J_pinv[:6, :3] @ v_rep
+
+        return u_rep
 
     def calculate_u_uapcbf(self, t, state):
         u_nom = self.mu_func(state)
@@ -701,6 +846,8 @@ class SafeControl(Node):
             self.h_now.append(-100)
             self.deltas.append([0,0])
             self.applied_std.append(0)
+            self.qp_fails.append(0)
+            self.em_stops.append(0)
             return u_nom
         
         # PCBF
@@ -721,6 +868,8 @@ class SafeControl(Node):
         self.u_nominals.append(u_nom)
         self.h_star.append(H)
         self.h_now.append(h_val)
+        self.qp_fails.append(0)
+        self.em_stops.append(0)
 
         return u
 
@@ -737,6 +886,8 @@ class SafeControl(Node):
             self.h_star.append(-100)
             self.deltas.append([0,0])
             self.applied_std.append(0)
+            self.qp_fails.append(0)
+            self.em_stops.append(0)
             return u_nom
         
         H, dHdt, dHdu = self.hstar_func(t, state)
@@ -753,6 +904,8 @@ class SafeControl(Node):
         self.h_star.append(H)
         self.deltas.append([0,0])
         self.applied_std.append(0)
+        self.qp_fails.append(0)
+        self.em_stops.append(0)
         
         return u
     
@@ -769,6 +922,8 @@ class SafeControl(Node):
             self.h_star.append(-100)
             self.deltas.append([0,0])
             self.applied_std.append(0)
+            self.qp_fails.append(0)
+            self.em_stops.append(0)
             return u_nom
             
         h_val, grad_h_q = self.h_func_with_gradient(t, state)
@@ -784,9 +939,63 @@ class SafeControl(Node):
         self.h_star.append(-100)
         self.deltas.append([0,0])
         self.applied_std.append(0)
+        self.qp_fails.append(0)
+        self.em_stops.append(0)
         
         return u  
     
+    def calculate_u_ttc(self, t, state):
+        u_nom = self.mu_func(state)
+        beta = self.ttc(t, state)
+        u = beta * u_nom
+        self.u_actuals.append(u)
+        self.u_nominals.append(u_nom)
+        h_now = self.h_func(t, state)
+        self.h_now.append(h_now)
+        self.h_star.append(-100)
+        self.deltas.append([0,0])
+        self.applied_std.append(0)
+        self.qp_fails.append(0)
+        self.em_stops.append(0)
+        return u
+    
+    def calculate_u_risk_field(self, t, state):
+        u_nom = self.mu_func(state)
+        u = np.zeros(6) if self.risk_field(t, state) else u_nom
+        self.u_actuals.append(u)
+        self.u_nominals.append(u_nom)
+        h_now = self.h_func(t, state)
+        _, obstacle_cov = self.get_updated_obstacle(t)
+        _, min_vec_unit = self.hand_tcp_dist(t, state)
+        applied_std = np.clip(self.gamma * min_vec_unit.T @ obstacle_cov @ min_vec_unit, 0, self.min_safety_distance)
+        self.h_now.append(h_now)
+        self.h_star.append(-100)
+        self.deltas.append([0,0])
+        self.applied_std.append(applied_std)
+        self.qp_fails.append(0)
+        self.em_stops.append(0)
+        return u
+    
+    def calculate_u_apf(self, t, state):
+        """
+        Combine nominal control with repulsive potential field.
+        """
+        u_nom = self.mu_func(state)
+        u_rep = self.apf(t, state)
+        u = u_nom + u_rep  # add repulsive correction
+
+        self.u_actuals.append(u)
+        self.u_nominals.append(u_nom)
+        h_now = self.h_func(t, state)
+        self.h_now.append(h_now)
+        self.h_star.append(-100)
+        self.deltas.append([0,0])
+        self.applied_std.append(0)
+        self.qp_fails.append(0)
+        self.em_stops.append(0)
+
+        return u
+
     def calculate_u_nominal(self, t, state):
         u_nom = self.mu_func(state)
         self.u_actuals.append(u_nom)
@@ -795,6 +1004,8 @@ class SafeControl(Node):
         self.h_star.append(-100)
         self.deltas.append([0,0])
         self.applied_std.append(0)
+        self.qp_fails.append(0)
+        self.em_stops.append(0)
         return u_nom
     
     def loginfo(self, msg):
@@ -808,6 +1019,7 @@ def main():
     #try:
     #    rclpy.spin(node)
     #except (Exception, KeyboardInterrupt, ValueError):
+    #    node.loginfo("ahaha lmao")
     #    node.save_data()
     #finally:
     #    node.destroy_node()

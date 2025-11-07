@@ -7,9 +7,9 @@ from launch.substitutions import LaunchConfiguration
 def generate_launch_description():
     # LeapMotion streamer node
     leap_streamer_node = Node(
-        package="collaborice_forecasting_node", 
+        package="leap_forecasting", 
         executable="leap_forecasting", 
-        name="collaborice_forecasting_node", 
+        name="leap_forecasting", 
         output="screen"
     )
 

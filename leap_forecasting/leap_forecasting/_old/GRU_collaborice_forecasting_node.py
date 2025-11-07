@@ -49,9 +49,9 @@ if DEBUG:
 
 def get_model_path():
     try:
-        package_path = get_package_share_directory("collaborice_forecasting_node")
+        package_path = get_package_share_directory("leap_forecasting")
     except PackageNotFoundError as e:
-        package_path = "src/collaborice_forecasting_node"
+        package_path = "src/leap_forecasting"
         logger.warn("[W] Are you in debug? Trying to get the path from the current directory: " + package_path)
     model_path = os.path.join(package_path, "checkpoints", MODEL_CHECKPOINT_NAME)
     assert os.path.exists(model_path), f"Model checkpoint not found: {model_path}"
@@ -87,7 +87,7 @@ def get_model():
 
 
 class ForecastingNode(Node):
-    def __init__(self, name: str = "collaborice_forecasting_node", target_hz: int = 30, *args, **kwargs):
+    def __init__(self, name: str = "leap_forecasting", target_hz: int = 30, *args, **kwargs):
         super().__init__(name, *args, **kwargs)
 
         self.target_hz = target_hz  # 30 hz

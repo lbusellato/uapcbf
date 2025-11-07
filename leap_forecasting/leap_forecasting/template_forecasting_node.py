@@ -47,7 +47,7 @@ class ForecastingNode(LifecycleNode):
 
     def __init__(
         self,
-        name: str = "collaborice_forecasting_node",
+        name: str = "leap_forecasting",
         target_hz: int = 30,
         publish_topic_name: str | None = None,
         *args,

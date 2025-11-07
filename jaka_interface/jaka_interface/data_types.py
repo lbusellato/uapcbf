@@ -108,7 +108,7 @@ class RobotStatus(Enum):
     POWERED_ON               =  2
     ENABLED                  =  3
     RAPIDRATE                =  4
-    PROTECTIVE_STOP          =  5
+    PROTECTIVE_STOP          =  -2 # TODO indice giusto
     DRAG_STATUS              =  6
     ON_SOFT_LIMIT            =  7
     CURRENT_USER_ID          =  8

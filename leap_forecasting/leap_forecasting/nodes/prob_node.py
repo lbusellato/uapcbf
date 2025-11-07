@@ -40,9 +40,9 @@ def parse_args():
 # Functions to locate and load the model checkpoint
 def get_model_path():
     try:
-        pkg_dir = get_package_share_directory("collaborice_forecasting_node")
+        pkg_dir = get_package_share_directory("leap_forecasting")
     except PackageNotFoundError:
-        pkg_dir = os.path.join(os.getcwd(), "src", "collaborice_forecasting_node")
+        pkg_dir = os.path.join(os.getcwd(), "src", "leap_forecasting")
     ckpt = os.path.join(pkg_dir, "checkpoints", "LeapUncertainty-prob_model_1000-hz=30-Tin=30-Tout=30.ckpt")
     if not os.path.exists(ckpt):
         raise FileNotFoundError(f"Model checkpoint not found: {ckpt}")

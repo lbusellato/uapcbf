@@ -50,7 +50,7 @@ def generate_launch_description():
     moving = LaunchConfiguration("moving")
     jaka_safe_control_node = Node(
         package='jaka_control',
-        executable='safe_control',
+        executable='mock_hand', # TODO cambiare qua!!!
         parameters=[{'simulated_robot': simulated_robot,
                      'forecasting_method' : forecasting_method,
                      'moving' : moving}],
@@ -89,7 +89,7 @@ def generate_launch_description():
     
     fake_data = LaunchConfiguration("fake_data")
     nn_node = Node(
-        package='collaborice_forecasting_node',
+        package='leap_forecasting',
         executable='prob_node',
         condition=IfCondition(
             PythonExpression([
@@ -117,7 +117,7 @@ def generate_launch_description():
     #    emulate_tty=True
     #)
     linear_node = Node(
-        package='forecasting',
+        package='leap_forecasting',
         executable='linear_node',
         condition=IfCondition(
             PythonExpression([
@@ -131,7 +131,7 @@ def generate_launch_description():
         emulate_tty=True
     )
     particle_node = Node(
-        package='forecasting',
+        package='leap_forecasting',
         executable='particle_node',
         condition=IfCondition(
             PythonExpression([
@@ -145,7 +145,7 @@ def generate_launch_description():
         emulate_tty=True
     )
     kalman_node = Node(
-        package='forecasting',
+        package='leap_forecasting',
         executable='kalman_node',
         condition=IfCondition(
             PythonExpression([

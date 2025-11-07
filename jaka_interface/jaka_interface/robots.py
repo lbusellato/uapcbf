@@ -4,7 +4,7 @@ from jaka_interface.data_types import *
 from jaka_interface.decorators import *
 from jaka_messages.msg import RobotState
 from spatialmath import SE3
-from typing import Any
+from typing import Any, Callable
 
 try:
     import jkrc
@@ -37,6 +37,9 @@ class BaseRobot():
         self.state.is_in_servo_mode   = False
         self.state.is_in_drag_mode    = False
 
+        # EM stop override method
+        self.em_stop_callback = lambda: SUCCESSFUL_RET
+
     def __str__(self):
         return self.__class__.__name__
 
@@ -63,11 +66,10 @@ class BaseRobot():
 
     def shutdown(self):
         try:
-            pass
-            #self.disable_robot()
-            #self.power_off()
-            #self.logout()
-            #self.power_off_gripper()
+            self.disable_robot()
+            self.power_off()
+            self.logout()
+            self.power_off_gripper()
         except KeyboardInterrupt:
             pass
 
@@ -2031,7 +2033,10 @@ class RealRobot(BaseRobot):
                  gripper_timeout: float = 0.5,
                  use_jaka_kinematics: bool=False,
                  urdf_package: str='jaka_description',
-                 urdf_name: str='jaka.urdf'):
+                 urdf_name: str='jaka.urdf',
+                 em_stop_callback: Callable=lambda: SUCCESSFUL_RET):
+        super().__init__()
+
         # Initialize the robot
         self.ip = ip
         self.robot = jkrc.RC(self.ip)
@@ -2049,7 +2054,8 @@ class RealRobot(BaseRobot):
             urdf_path = os.path.join(package_share_path, 'urdf', urdf_name)
             self.chain = rtb.ERobot.URDF(urdf_path)
 
-        super().__init__()
+        # EM stop override
+        self.em_stop_callback = em_stop_callback
 
     #########################################
     #                                       #
@@ -2332,12 +2338,12 @@ class RealRobot(BaseRobot):
         self.state.is_powered_on = robot_status[RobotStatus.POWERED_ON.value]
         self.state.is_enabled = robot_status[RobotStatus.ENABLED.value]
         self.state.is_in_drag_mode = robot_status[RobotStatus.DRAG_STATUS.value]
-        self.state.is_em_stop_pressed = robot_status[RobotStatus.PROTECTIVE_STOP.value]
         dout = robot_status[RobotStatus.DOUT.value]        
         self.state.is_gripper_closed = dout[self.gripper_power_pin] and dout[self.gripper_control_pin]
         self._joint_position = list(robot_status[RobotStatus.JOINT_POSITION.value])
         self._tcp_position = list(robot_status[RobotStatus.CART_POSITION.value])
         robot_state = self.get_robot_state()
+        self.state.is_em_stop_pressed = robot_state[RobotStatus.EM_STOP.value]
         self.state.is_in_servo_mode = robot_state[RobotStatus.SERVO_ENABLED.value]
 
     @untested
