@@ -8,8 +8,8 @@ launch_ros==0.26.6
 leap==0.0.1
 # leapmotion==1.0
 # matplotlib==3.6.3
-numpy==2.3.2
-# numpy<2
+# numpy==2.3.2
+numpy<2
 pytest==7.4.4
 rclpy==7.1.3
 roboticstoolbox_python==1.1.1
