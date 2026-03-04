@@ -2,7 +2,6 @@ import argparse
 import os
 import json
 import time
-import numpy as np
 import torch
 import threading
 from collections import deque

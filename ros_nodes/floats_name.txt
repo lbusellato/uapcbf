@@ -1,0 +1,57 @@
+
+ # Leap Motion Gesture Recognition
+
+## Installation
+
+### Install Dependencies
+Follow the instructions to install the LeapC Python bindings from:
+[LeapC Python Bindings](https://github.com/ultraleap/leapc-python-bindings/tree/main)
+
+## Execution on Windows Subsystem for Linux (WSL)
+1. Open PowerShell as Administrator
+2. Run the following commands:
+   ```powershell
+   usbipd list  # Check the ID of the USB device
+   usbipd bind --busid <your-busid>
+   ```
+
+## Execution on Ubuntu
+### Build the Executable
+Inside `colcon_ws`, run:
+```bash
+colcon build --symlink-install
+. install/setup.bash
+```
+
+### Run the Application
+Run the following ROS2 commands:
+```bash
+ros2 run leap_gesture_recognition leap_gesture_recognition
+ros2 run leap_motion leap_motion
+```
+
+### View Published Topics
+To check the published joint data:
+```bash
+ros2 topic echo /leapmotion/joints
+```
+
+## Tracked Hand Joint Data
+The system tracks 3D positions for key hand joints, structured as follows:
+
+- **Palm & Wrist:** Palm position, rotation (quaternion), and wrist position.
+- **Fingers:** Each finger (thumb, index, middle, ring, pinky) has:
+  - Metacarpal
+  - Proximal
+  - Intermediate
+  - Distal
+
+Each joint is represented by its `x`, `y`, and `z` coordinates.
+
+### Example Naming Convention
+- `left_palm_x`, `left_palm_y`, `left_palm_z`
+- `left_thumb_proximal_x`, `left_thumb_proximal_y`, `left_thumb_proximal_z`
+- `right_index_distal_x`, `right_index_distal_y`, `right_index_distal_z`
+
+This structure applies to both hands (`left_` and `right_`).
+

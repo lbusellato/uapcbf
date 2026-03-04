@@ -50,7 +50,7 @@ def generate_launch_description():
     moving = LaunchConfiguration("moving")
     jaka_safe_control_node = Node(
         package='jaka_control',
-        executable='mock_hand', # TODO cambiare qua!!!
+        executable='handover', # TODO cambiare qua!!!
         parameters=[{'simulated_robot': simulated_robot,
                      'forecasting_method' : forecasting_method,
                      'moving' : moving}],
